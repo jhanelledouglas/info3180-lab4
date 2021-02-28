@@ -6,13 +6,27 @@ This file creates your application.
 """
 import os
 from app import app
+from app import forms
 from flask import render_template, request, redirect, url_for, flash, session, abort
 from werkzeug.utils import secure_filename
+from flask import send_from_directory
 
 
 ###
 # Routing for your application.
 ###
+
+@app.route('/uploads/<path:filename>')
+def get_image(filename):
+    root_dir = os.getcwd()
+    return send_from_directory(os.path.join(root_dir, app.config['UPLOAD_FOLDER']), filename)
+
+
+@app.route('/files')
+def files():
+    lst = get_uploaded_images()
+    return render_template('files.html', items=lst)
+
 
 @app.route('/')
 def home():
@@ -23,24 +37,32 @@ def home():
 @app.route('/about/')
 def about():
     """Render the website's about page."""
-    return render_template('about.html', name="Mary Jane")
+    return render_template('about.html', name="Jhanelle Douglas")
 
 
 @app.route('/upload', methods=['POST', 'GET'])
 def upload():
-    if not session.get('logged_in'):
-        abort(401)
 
     # Instantiate your form class
+    uploadform = forms.UploadForm()
+
+    if request.method == 'GET':
+        return render_template('upload.html', form=uploadform)
 
     # Validate file upload on submit
-    if request.method == 'POST':
+    if request.method == 'POST' and uploadform.validate_on_submit():
         # Get file data and save to your uploads folder
+        photo = uploadform.photo.data
+        description = uploadform.description.data
+
+        filename = secure_filename(photo.filename)
+        photo.save(os.path.join(
+            app.config['UPLOAD_FOLDER'], filename
+        ))
 
         flash('File Saved', 'success')
         return redirect(url_for('home'))
-
-    return render_template('upload.html')
+    return render_template('upload.html', form=uploadform)
 
 
 @app.route('/login', methods=['POST', 'GET'])
@@ -51,10 +73,23 @@ def login():
             error = 'Invalid username or password'
         else:
             session['logged_in'] = True
-            
+
             flash('You were logged in', 'success')
             return redirect(url_for('upload'))
     return render_template('login.html', error=error)
+
+
+def get_uploaded_images():
+    import os
+    rootdir = os.getcwd()
+    lst = []
+    for subdir, dirs, files in os.walk(rootdir + '/uploads'):
+        for file in files:
+            lst.append(file)
+            if not session.get('logged_in'):
+                abort(401)
+    lst.pop(0)
+    return lst
 
 
 @app.route('/logout')
@@ -75,7 +110,8 @@ def flash_errors(form):
             flash(u"Error in the %s field - %s" % (
                 getattr(form, field).label.text,
                 error
-), 'danger')
+            ), 'danger')
+
 
 @app.route('/<file_name>.txt')
 def send_text_file(file_name):
